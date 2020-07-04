@@ -2,51 +2,29 @@ import scipy
 import numpy as np
 import cv2
 import argparse
+import json
 from keras.applications import inception_v3
 from keras import backend as K
 from keras.preprocessing import image
 from utils import *
 
-##### Setting up constants, hyperparameters #####
-
-# Constants
-DEMO_IMAGE_PATH = './test_images/flower_valley.jpg'
-
-# Loop's hyperparameters
-STEP = 0.01          # Value of the gradient ascent step
-NUM_OCTAVE = 3       # Octave amount
-OCTAVE_SCALE = 1.4   # Scale of each octave (look at the picture at the end of notebook)
-ITERATIONS = 20      # Iterations amount on the each octave
-MAX_LOSS = 10.       # Max loss that prevent ugly artifacts
-
-# Layers could be from mixed0 up to mixed10
-# Check names with command model.summary()
-layer_contribution = {
-    'mixed2': 0.2,
-    'mixed3': 3.,
-    'mixed4': 2.,
-    'mixed5': 1.5
-}
-
-##### Setting up model and loss #####
-
 #Set learning phase = 0 (test mode). Prevent model learning for safety reasons.
 K.set_learning_phase(0) 
-model = inception_v3.InceptionV3(weights='imagenet', include_top=False)		
-loss = get_loss(layer_contribution, model)
+model = inception_v3.InceptionV3(weights='imagenet', include_top=False)	
 
-#### Create K.function to fetch loss and gradients from model input
 
-# Create tensor for result storing
-dream = model.input 
-# Fetch gradient and normalize it
-grads = K.gradients(loss = loss, variables = dream)[0]
-grads /= K.maximum(K.mean(K.abs(grads)), 1e-7)  #1e-7 - safety measure to avoid division by 0
-# And now we provide link between current result and his gradients with losses
-fetch_loss_and_grads = K.function([dream], [loss, grads])
-	
-#### Predict	        
-def predict(img_file, num_octave, octave_scale, iterations, step, max_loss):
+##### Create parser #####
+parser = argparse.ArgumentParser()
+parser.add_argument('-i', action = 'store', type = str,
+					dest = 'image_path', 
+					help = 'Path to the input image',
+					required = True)
+parser.add_argument('-o', action = 'store', type = str,
+					dest = 'json_path', 
+					default = 'config.json',
+					help = 'Path to the json configuration file')
+					
+def predict(img_file, num_octave, octave_scale, iterations, step, max_loss, model, loss):
 	img = preprocess_img(img_file)
 
 	# Create list of shapes correspond with octave scales 
@@ -66,23 +44,36 @@ def predict(img_file, num_octave, octave_scale, iterations, step, max_loss):
 		print('Processing image shape: ', shape)
 		# Image gradient ascenting 
 		img = resize_img(img, shape)
-		img = gradient_ascent(img, iterations, step, fetch_loss_and_grads, max_loss)
+		img = gradient_ascent(img, iterations, step, fetch_loss_and_grads(model, loss), max_loss)
 		# Lost detail computation
 		upscaled_shrunck_original_img = resize_img(shrunck_original_img, shape)
 		same_original_size = resize_img(orginal_img, shape)
 		lost_detail = same_original_size - upscaled_shrunck_original_img
 		# Impute details
 		img += lost_detail
-		save_img(img, './notebook_images/scale_{}.png'.format(shape))
+		save_img(img, './imgs/scale_{}.png'.format(shape))
 		
 		shrunck_original_img = resize_img(orginal_img, shape)
 		
 	save_img(img, 'result.png') 
-	print('Process finished, result was saved in the project root folder')
+	print('Process finished, result was saved in the project root folder')					
+					
+if __name__ == "__main__":
+	args = parser.parse_args()
+	img_path = args.image_path
+	with open(args.json_path) as f:
+		options = json.load(f)
+		f.close()
+		
+	layer_contribution = options['layer_contribution']
 	
-predict(img_file=DEMO_IMAGE_PATH, 
-		num_octave=NUM_OCTAVE, 
-		octave_scale=OCTAVE_SCALE,
-		iterations=ITERATIONS,
-		step=STEP,
-		max_loss=MAX_LOSS)
+	loss = get_loss(layer_contribution, model)
+	        
+	predict(img_file=img_path, 
+			num_octave=options['num_octave'], 
+			octave_scale=options['octave_scale'],
+			iterations=options['iterations'],
+			step=options['step'],
+			max_loss=options['max_loss'],
+			model = model,
+			loss = loss)

@@ -92,6 +92,24 @@ def get_loss(layer_contribution, model):
 		loss += coeff * K.sum(K.square(activation)) / scaling
 	return loss    
 
+def fetch_loss_and_grads(model, loss):
+	'''
+	Create K.function to fetch loss and gradients from model input
+	Input:
+		model - by default it is InceptionV3 from keras.applications.
+		loss - L2 norm of selected mixed layers with their impact weights
+	Output:
+		K.functions([model.input], [loss, grads])
+	'''
+	# Create tensor for result storing
+	dream = model.input 
+	# Fetch gradient and normalize it
+	grads = K.gradients(loss = loss, variables = dream)[0]
+	grads /= K.maximum(K.mean(K.abs(grads)), 1e-7)  #1e-7 - safety measure to avoid division by 0
+	# And now we provide link between current result and his gradients with losses
+	fetch_loss_and_grads = K.function([dream], [loss, grads])
+	return fetch_loss_and_grads	
+
 def gradient_ascent(x, iterations, step, fetch_func, max_loss=None, verbose=True):
     '''
     Main gradient function. Performs the specified number of gradient ascent steps.
