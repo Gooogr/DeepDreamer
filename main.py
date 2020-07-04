@@ -4,8 +4,9 @@ import cv2
 from keras.applications import inception_v3
 from keras import backend as K
 from keras.preprocessing import image
-
 from utils import *
+
+##### Setting up constants, hyperparameters #####
 
 # Constants
 DEMO_IMAGE_PATH = './test_images/flower_valley.jpg'
@@ -17,11 +18,6 @@ OCTAVE_SCALE = 1.4   # Scale of each octave (look at the picture at the end of n
 ITERATIONS = 20      # Iterations amount on the each octave
 MAX_LOSS = 10.       # Max loss that prevent ugly artifacts
 
-#Set learning phase = 0 (test mode). Prevent model learning for safety reasons.
-K.set_learning_phase(0) 
-
-model = inception_v3.InceptionV3(weights='imagenet', include_top=False)
-
 # Layers could be from mixed0 up to mixed10
 # Check names with command model.summary()
 layer_contribution = {
@@ -31,20 +27,16 @@ layer_contribution = {
     'mixed5': 1.5
 }
 
-# Loss calculation (L2_norm of layers outputs)
-layer_dict = dict([(layer.name, layer) for layer in model.layers])
-loss = K.variable(0.)
-for layer_name in layer_contribution:
-    coeff = layer_contribution[layer_name]
-    # Get layer output
-    activation = layer_dict[layer_name].output
-    # Calculate L2 norm
-    scaling = K.prod(K.cast(K.shape(activation), 'float32'))
-    loss += coeff * K.sum(K.square(activation)) / scaling  #test without -2:2 and so on
+##### Setting up model and loss #####
 
-##############GRADINET ASCENDING##############
+#Set learning phase = 0 (test mode). Prevent model learning for safety reasons.
+K.set_learning_phase(0) 
+model = inception_v3.InceptionV3(weights='imagenet', include_top=False)		
+loss = get_loss(layer_contribution, model)
 
-## Create K.function to fetch loss and gradients from model input
+##### Setting up gradient ascending algorithm #####
+
+# ~ ## Create K.function to fetch loss and gradients from model input
 
 # Create tensor for result storing
 dream = model.input 
@@ -54,68 +46,73 @@ grads /= K.maximum(K.mean(K.abs(grads)), 1e-7)  #1e-7 - safety measure to avoid 
 # And now we provide link between current result and his gradients with losses
 fetch_loss_and_grads = K.function([dream], [loss, grads])
 
-# Gradient ascent's helper function
-def eval_loss_and_grads(x):
-    '''
-    Extract loss and grads values from current input state
-    Input:
-        Current state of model.input
-    Output:
-        Current values of loss and input gradients
-    '''
-    # Pass input x (it will be model.input) through  K.function([model.input], [loss, grads])
-    outs = fetch_loss_and_grads([x])
-    # Get values
-    loss_value = outs[0]
-    grad_values = outs[1]
-    return loss_value, grad_values
-    
-# Main function
+# ~ def fetch_loss_and_grads(model, loss):
+	# ~ '''
+	# ~ Create K.function for getting loss and gradients from model input
+	# ~ Input:
+		# ~ model - by default it is InceptionV3 from keras.applications
+		# ~ loss - L2 norm of selected mixed layers
+	# ~ Output:
+		# ~ K.function([model.input], [loss, grads])
+	# ~ '''
+	# ~ # Get input
+	# ~ dream = model.input 
+	# ~ # Fetch gradient and normalize it
+	# ~ grads = K.gradients(loss = loss, variables = dream)[0]
+	# ~ grads /= K.maximum(K.mean(K.abs(grads)), 1e-7)  #1e-7 - safety measure to avoid division by 0
+	# ~ # And now we provide link between current result and his gradients with losses
+	# ~ fetch_loss_and_grads = K.function([dream], [loss, grads])
+	# ~ return fetch_loss_and_grads
+	
+	    
+# Main gradient function
 def gradient_ascent(x, iterations, step, max_loss=None, verbose=True):
     '''
     Performs the specified number of gradient ascent steps.
     '''
     for i in range(iterations):
-        loss_value, grad_values = eval_loss_and_grads(x)
+        loss_value, grad_values = eval_loss_and_grads(x, fetch_loss_and_grads)
         if verbose:
             print('Loss value at {} step: {:.3f}'.format(i, loss_value))
         if max_loss is not None and loss_value > max_loss:
-            print('Current loss = {:.3f} exceeded max_loss = {:.d}, ascent was finished'.format(loss_value, max_loss))
+            print('Current loss = {:.3f} exceeded max_loss = {}, ascent was finished'.format(loss_value, max_loss))
             break
         x += step * grad_values
     return x
     
-    
-img = preprocess_img(DEMO_IMAGE_PATH)
+def predict(img_file):
+	img = preprocess_img(img_file)
 
-# Create list of shapes correspond with octave scales 
-original_shape = img.shape[1:3]
-octave_shapes = [original_shape]
-for i in range(NUM_OCTAVE):
-    scaled_shape = tuple([int(dim/(OCTAVE_SCALE ** i)) for dim in original_shape])
-    octave_shapes.append(scaled_shape)
-octave_shapes = octave_shapes[::-1]
+	# Create list of shapes correspond with octave scales 
+	original_shape = img.shape[1:3]
+	octave_shapes = [original_shape]
+	for i in range(NUM_OCTAVE):
+		scaled_shape = tuple([int(dim/(OCTAVE_SCALE ** i)) for dim in original_shape])
+		octave_shapes.append(scaled_shape)
+	octave_shapes = octave_shapes[::-1]
 
 
-orginal_img = np.copy(img)
+	orginal_img = np.copy(img)
 
-# Initialize shrunck image by the smallest image
-shrunck_original_img = resize_img(img, octave_shapes[0]) 
+	# Initialize shrunck image by the smallest image
+	shrunck_original_img = resize_img(img, octave_shapes[0]) 
 
-for shape in octave_shapes:
-    print('Processing image shape: ', shape)
-    # Image gradient ascenting 
-    img = resize_img(img, shape)
-    img = gradient_ascent(img, ITERATIONS, STEP, MAX_LOSS)
-    # Lost detail computation
-    upscaled_shrunck_original_img = resize_img(shrunck_original_img, shape)
-    same_original_size = resize_img(orginal_img, shape)
-    lost_detail = same_original_size - upscaled_shrunck_original_img
-    # Impute details
-    img += lost_detail
-    save_img(img, './notebook_images/scale_{}.png'.format(shape))
-    
-    shrunck_original_img = resize_img(orginal_img, shape)
-    
-save_img(img, 'result.png') 
-print('Process finished, result was saved in the project root folder')
+	for shape in octave_shapes:
+		print('Processing image shape: ', shape)
+		# Image gradient ascenting 
+		img = resize_img(img, shape)
+		img = gradient_ascent(img, ITERATIONS, STEP, MAX_LOSS)
+		# Lost detail computation
+		upscaled_shrunck_original_img = resize_img(shrunck_original_img, shape)
+		same_original_size = resize_img(orginal_img, shape)
+		lost_detail = same_original_size - upscaled_shrunck_original_img
+		# Impute details
+		img += lost_detail
+		save_img(img, './notebook_images/scale_{}.png'.format(shape))
+		
+		shrunck_original_img = resize_img(orginal_img, shape)
+		
+	save_img(img, 'result.png') 
+	print('Process finished, result was saved in the project root folder')
+	
+predict(img_file = DEMO_IMAGE_PATH)

@@ -5,6 +5,8 @@ from keras.preprocessing import image
 from keras.applications import inception_v3
 from keras import backend as K
 
+##### Image subrutine ####
+
 def preprocess_img(img_path):
     '''
     Convert raw image to the InceptionV3 input format
@@ -62,3 +64,46 @@ def save_img(img, file_name):
     '''
     pil_img = deprocess_img(np.copy(img))
     cv2.imwrite(file_name, pil_img)
+
+
+##### Gradient ascending subrutine ####
+    
+def get_loss(layer_contribution, model):
+	'''
+	Calculate loss based on the L2_norm of selected layers outputs.
+	Input:
+		layer_contribution - dict with layers names and their impact weigts.
+		Example: {
+			'mixed1': 0.3,
+			'mixed3': 0.01}
+		Names should be the same with the corresponded model layers.
+		model - by default it is InceptionV3 from keras.applications.
+	Output:
+		Calculated L2 loss, tf.Variable.	
+	'''
+	layer_dict = dict([(layer.name, layer) for layer in model.layers])
+	loss = K.variable(0.)
+	for layer_name in layer_contribution:
+		coeff = layer_contribution[layer_name]
+		# Get layer output
+		activation = layer_dict[layer_name].output
+		# Calculate L2 norm
+		scaling = K.prod(K.cast(K.shape(activation), 'float32'))
+		loss += coeff * K.sum(K.square(activation)) / scaling
+	return loss
+	
+def eval_loss_and_grads(x, fetch_func):
+    '''
+    Extract loss and grads values from current input state
+    Input:
+        x - current state of model.input
+        fetch_func - K.functions([model.input], [loss, grads])
+    Output:
+        Current values of loss and input gradients
+    '''
+    # Pass input x (it will be model.input) through  K.function([model.input], [loss, grads])
+    outs = fetch_loss_and_grads([x])
+    # Get values
+    loss_value = outs[0]
+    grad_values = outs[1]
+    return loss_value, grad_values
