@@ -5,7 +5,7 @@ from keras.preprocessing import image
 from keras.applications import inception_v3
 from keras import backend as K
 
-##### Image subrutine ####
+##### IMAGE SUBRUTINE #####
 
 def preprocess_img(img_path):
     '''
@@ -66,7 +66,7 @@ def save_img(img, file_name):
     cv2.imwrite(file_name, pil_img)
 
 
-##### Gradient ascending subrutine ####
+##### GRADIENT ASCENDING SUBRUTINE #####
     
 def get_loss(layer_contribution, model):
 	'''
@@ -90,20 +90,25 @@ def get_loss(layer_contribution, model):
 		# Calculate L2 norm
 		scaling = K.prod(K.cast(K.shape(activation), 'float32'))
 		loss += coeff * K.sum(K.square(activation)) / scaling
-	return loss
-	
-def eval_loss_and_grads(x, fetch_func):
+	return loss    
+
+def gradient_ascent(x, iterations, step, fetch_func, max_loss=None, verbose=True):
     '''
-    Extract loss and grads values from current input state
+    Main gradient function. Performs the specified number of gradient ascent steps.
     Input:
-        x - current state of model.input
-        fetch_func - K.functions([model.input], [loss, grads])
-    Output:
-        Current values of loss and input gradients
+		x - current state of model input
+		iteration - iterations amount on the each octave
+		step - value of the gradient ascent step
+		fetch_func - K.functions([model.input], [loss, grads])
+		max_loss - maximum loss value. This limitation prevent ugly artifacts
+		verbose - if True, function print loss value on current step
     '''
-    # Pass input x (it will be model.input) through  K.function([model.input], [loss, grads])
-    outs = fetch_loss_and_grads([x])
-    # Get values
-    loss_value = outs[0]
-    grad_values = outs[1]
-    return loss_value, grad_values
+    for i in range(iterations):
+        loss_value, grad_values = fetch_func([x])#[:2] 
+        if verbose:
+            print('Loss value at {} step: {:.3f}'.format(i, loss_value))
+        if max_loss is not None and loss_value > max_loss:
+            print('Current loss = {:.3f} exceeded max_loss = {}, ascent was finished'.format(loss_value, max_loss))
+            break
+        x += step * grad_values
+    return x

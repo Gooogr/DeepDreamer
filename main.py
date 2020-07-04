@@ -1,6 +1,7 @@
 import scipy
 import numpy as np
 import cv2
+import argparse
 from keras.applications import inception_v3
 from keras import backend as K
 from keras.preprocessing import image
@@ -34,9 +35,7 @@ K.set_learning_phase(0)
 model = inception_v3.InceptionV3(weights='imagenet', include_top=False)		
 loss = get_loss(layer_contribution, model)
 
-##### Setting up gradient ascending algorithm #####
-
-# ~ ## Create K.function to fetch loss and gradients from model input
+#### Create K.function to fetch loss and gradients from model input
 
 # Create tensor for result storing
 dream = model.input 
@@ -45,52 +44,18 @@ grads = K.gradients(loss = loss, variables = dream)[0]
 grads /= K.maximum(K.mean(K.abs(grads)), 1e-7)  #1e-7 - safety measure to avoid division by 0
 # And now we provide link between current result and his gradients with losses
 fetch_loss_and_grads = K.function([dream], [loss, grads])
-
-# ~ def fetch_loss_and_grads(model, loss):
-	# ~ '''
-	# ~ Create K.function for getting loss and gradients from model input
-	# ~ Input:
-		# ~ model - by default it is InceptionV3 from keras.applications
-		# ~ loss - L2 norm of selected mixed layers
-	# ~ Output:
-		# ~ K.function([model.input], [loss, grads])
-	# ~ '''
-	# ~ # Get input
-	# ~ dream = model.input 
-	# ~ # Fetch gradient and normalize it
-	# ~ grads = K.gradients(loss = loss, variables = dream)[0]
-	# ~ grads /= K.maximum(K.mean(K.abs(grads)), 1e-7)  #1e-7 - safety measure to avoid division by 0
-	# ~ # And now we provide link between current result and his gradients with losses
-	# ~ fetch_loss_and_grads = K.function([dream], [loss, grads])
-	# ~ return fetch_loss_and_grads
 	
-	    
-# Main gradient function
-def gradient_ascent(x, iterations, step, max_loss=None, verbose=True):
-    '''
-    Performs the specified number of gradient ascent steps.
-    '''
-    for i in range(iterations):
-        loss_value, grad_values = eval_loss_and_grads(x, fetch_loss_and_grads)
-        if verbose:
-            print('Loss value at {} step: {:.3f}'.format(i, loss_value))
-        if max_loss is not None and loss_value > max_loss:
-            print('Current loss = {:.3f} exceeded max_loss = {}, ascent was finished'.format(loss_value, max_loss))
-            break
-        x += step * grad_values
-    return x
-    
-def predict(img_file):
+#### Predict	        
+def predict(img_file, num_octave, octave_scale, iterations, step, max_loss):
 	img = preprocess_img(img_file)
 
 	# Create list of shapes correspond with octave scales 
 	original_shape = img.shape[1:3]
 	octave_shapes = [original_shape]
-	for i in range(NUM_OCTAVE):
-		scaled_shape = tuple([int(dim/(OCTAVE_SCALE ** i)) for dim in original_shape])
+	for i in range(num_octave):
+		scaled_shape = tuple([int(dim/(octave_scale ** i)) for dim in original_shape])
 		octave_shapes.append(scaled_shape)
 	octave_shapes = octave_shapes[::-1]
-
 
 	orginal_img = np.copy(img)
 
@@ -101,7 +66,7 @@ def predict(img_file):
 		print('Processing image shape: ', shape)
 		# Image gradient ascenting 
 		img = resize_img(img, shape)
-		img = gradient_ascent(img, ITERATIONS, STEP, MAX_LOSS)
+		img = gradient_ascent(img, iterations, step, fetch_loss_and_grads, max_loss)
 		# Lost detail computation
 		upscaled_shrunck_original_img = resize_img(shrunck_original_img, shape)
 		same_original_size = resize_img(orginal_img, shape)
@@ -115,4 +80,9 @@ def predict(img_file):
 	save_img(img, 'result.png') 
 	print('Process finished, result was saved in the project root folder')
 	
-predict(img_file = DEMO_IMAGE_PATH)
+predict(img_file=DEMO_IMAGE_PATH, 
+		num_octave=NUM_OCTAVE, 
+		octave_scale=OCTAVE_SCALE,
+		iterations=ITERATIONS,
+		step=STEP,
+		max_loss=MAX_LOSS)
