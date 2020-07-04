@@ -5,8 +5,12 @@ from PIL import Image
 import base64
 from io import BytesIO
 from collections import defaultdict
+from main import predict
+from keras import backend as K
+from keras.applications import inception_v3
+from utils import get_loss
 
-DEMO_IMAGE_PATH = './test_images/flower_valley.jpg'
+DEMO_IMAGE_PATH = './imgs/flower_valley.jpg'
 
 st.title("DeepDream interactive demo")
 
@@ -42,9 +46,36 @@ octave_scale = st.sidebar.slider("Octave scale", min_value=1.1, max_value=2.0, v
 iterations = st.sidebar.slider("Iterations", min_value=10, max_value=30, value=20)
 max_loss = st.sidebar.slider("Maximum loss", min_value=5, max_value=20, value=10)
 
+# Setting up model and loss
+K.set_learning_phase(0) 
+model = inception_v3.InceptionV3(weights='imagenet', 
+								 include_top=False)	
+loss = get_loss(layers_coeff, model)
+
+def get_image_download_link(img):
+	"""Generates a link allowing the PIL image to be downloaded
+	in:  PIL image
+	out: href string
+	"""
+	buffered = BytesIO()
+	img.save(buffered, format="JPEG")
+	img_str = base64.b64encode(buffered.getvalue()).decode()
+	href = f'<a href="data:file/jpg;base64,{img_str}">Download result</a>'
+	return href
+
 if st.button('Start to dream'):
-	st.write('ping')
-	st.write(layers_coeff)
+	predicted_img = predict(img_file=image, 
+							num_octave=num_octave, 
+							octave_scale=octave_scale,
+							iterations=iterations,
+							step=step,
+							max_loss=max_loss,
+							model=model,
+							loss=loss)
+	st.image(predicted_img)
+	result = Image.fromarray(predicted_img)
+	st.markdown(get_image_download_link(result), 
+				unsafe_allow_html=True)
 	
 
 

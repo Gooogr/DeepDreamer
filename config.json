@@ -1,0 +1,8 @@
+{
+"layer_contribution":{"mixed2": 0.2, "mixed3": 3.0, "mixed4": 2.0, "mixed5": 1.5},
+"step":0.01,
+"num_octave":3,
+"octave_scale":1.4,
+"iterations":20,
+"max_loss":10
+}
