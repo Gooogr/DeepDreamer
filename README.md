@@ -1,6 +1,9 @@
 # DeepDreamer
 Streamlit app with Deep Dream implementation
 
+### Jupyter notebook
+Use ```Base_implementation.ipynb```
+
 ### Run terminal app
 ```
 python3 main.py -i imgs/flower_valley.jpg
