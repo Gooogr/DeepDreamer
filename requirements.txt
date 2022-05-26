@@ -3,5 +3,5 @@ notebook
 opencv-python
 Pillow
 streamlit
-tensorflow==1.15.4
+tensorflow==2.7.2
 scipy
